@@ -195,9 +195,9 @@
                 const ua = navigator.userAgent;
                 const uaLower = ua.toLowerCase();
 
-                // 声明身份解析
+                // 声明身份解析 (修复 Edge 移动版 EdgA 识别)
                 let claimed = 'unknown';
-                if (uaLower.includes('edg/')) claimed = 'edge';
+                if (uaLower.includes('edg/') || uaLower.includes('edga/')) claimed = 'edge';
                 else if (uaLower.includes('chrome/') || uaLower.includes('crios/')) claimed = 'chrome';
                 else if (uaLower.includes('firefox/') || uaLower.includes('fxios/')) claimed = 'firefox';
                 else if (uaLower.includes('safari/') && !uaLower.includes('chrome/')) claimed = 'safari';
@@ -215,7 +215,7 @@
                 else if (/linux/i.test(uaLower)) uaOS = 'linux';
 
                 // ==========================================
-                // 1. 深度引擎特征（移动端 window.chrome 特殊处理）
+                // 1. 深度引擎特征 (移动端 window.chrome 特殊处理)
                 // ==========================================
                 const isChromium = !!window.chrome;
                 const isGecko = typeof CSS !== 'undefined' && CSS.supports && CSS.supports('-moz-appearance', 'none');
@@ -225,7 +225,6 @@
                 if (claimed === 'chrome' || claimed === 'edge') {
                     if (!isChromium) {
                         if (isMobile) {
-                            // 移动端 WebView / iOS Chrome 等缺失 window.chrome 不视为异常
                             addResult('深度引擎特征', 'window.chrome 验证', '缺失 (移动端常见)', 'info',
                                 '移动端 Chromium 或 WebView 常不暴露 window.chrome 对象，属正常现象');
                         } else {
@@ -279,7 +278,7 @@
                     }
                     addResult('Client Hints API', 'API 状态', '原生支持 ✅', 'pass', '正常返回 userAgentData');
                 } else {
-                    const match = uaLower.match(/(chrome|edge|edg)\/(\d+)/);
+                    const match = uaLower.match(/(chrome|edge|edg[a]?)\/(\d+)/);
                     if (match && parseInt(match[2]) > 100 && window.isSecureContext) {
                         addResult('Client Hints API', 'API 状态', '异常缺失 ❌', 'fail', '新版 Chromium 在 HTTPS 下理应支持此 API，可能被屏蔽。');
                     } else {
@@ -307,7 +306,7 @@
                     addResult('自动化特征', '框架注入变量', detectedAutomation.map(d=>d.label).join('、'), 'fail', '检测到自动化框架注入的特征变量');
                 }
 
-                // WebGL 检测（软件渲染 + 操作系统渲染指纹）
+                // WebGL 检测 (软件渲染 + 操作系统渲染指纹)
                 try {
                     const gl = document.createElement('canvas').getContext('webgl');
                     if (gl) {
@@ -334,9 +333,8 @@
                 } catch (e) {}
 
                 // ==========================================
-                // 4. 无头浏览器专项检测（移动端尺寸优化）
+                // 4. 无头浏览器专项检测 (移动端尺寸跳过)
                 // ==========================================
-                // 移动端窗口外框通常为0，直接跳过此项检测，避免误报
                 if (!isMobile) {
                     if (window.outerWidth === 0 && window.outerHeight === 0) {
                         addResult('无头浏览器特征', '窗口外框尺寸', '0×0', 'fail', '桌面端窗口外框尺寸为 0，高度疑似无头浏览器！');
@@ -437,12 +435,12 @@
                 }
 
                 // ==========================================
-                // 6. 浏览器版本探测
+                // 6. 浏览器版本探测 (支持 EdgA 版本提取)
                 // ==========================================
                 if (claimed === 'chrome' || claimed === 'edge' || claimed === 'firefox') {
                     let match;
                     if (claimed === 'firefox') match = uaLower.match(/firefox\/(\d+)/);
-                    else if (claimed === 'edge') match = uaLower.match(/edg\/(\d+)/);
+                    else if (claimed === 'edge') match = uaLower.match(/edg[a]?\/(\d+)/);
                     else match = uaLower.match(/chrome\/(\d+)/);
                     const claimedVersion = match ? parseInt(match[1]) : 0;
                     if (claimedVersion > 0) {
@@ -513,7 +511,8 @@
                 const warns = results.filter(r => r.status === 'warn').length;
 
                 if (detectionMeta) {
-                    document.getElementById('uaClaimedTag').textContent = `🏷️ UA 声明: ${detectionMeta.claimed.charAt(0).toUpperCase()+detectionMeta.claimed.slice(1)}`;
+                    const claimName = detectionMeta.claimed.charAt(0).toUpperCase()+detectionMeta.claimed.slice(1);
+                    document.getElementById('uaClaimedTag').textContent = `🏷️ UA 声明: ${claimName}`;
                     document.getElementById('uaFullString').textContent = detectionMeta.ua;
                 }
 
