@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>浏览器环境与篡改检测 · 增强版</title>
+    <style>
+        :root {
+            --primary: #0f172a;
+            --pass-bg: #ecfdf5;
+            --pass-text: #065f46;
+            --warn-bg: #fff7ed;
+            --warn-text: #9a3412;
+            --fail-bg: #fef2f2;
+            --fail-text: #991b1b;
+            --info-bg: #f0f9ff;
+            --info-text: #075985;
+            --surface: #ffffff;
+            --border: #e2e8f0;
+            --muted: #64748b;
+            --accent: #3b82f6;
+            --accent-light: #eff6ff;
+        }
+        * { box-sizing: border-box; }
+        body {
+            background: #f1f5f9;
+            font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+            margin: 0; padding: 20px;
+            color: #1e293b; line-height: 1.5;
+        }
+        .container { max-width: 1200px; margin: 0 auto; }
+        .page-header { margin-bottom: 20px; }
+        .page-header h1 { font-size: 1.7rem; color: var(--primary); margin: 0 0 4px 0; letter-spacing: -0.02em; }
+        .page-header .sub { color: #64748b; font-size: 0.9rem; border-left: 4px solid var(--accent); padding-left: 12px; }
+
+        .ua-display-card {
+            background: var(--surface); border: 1px solid var(--border);
+            border-radius: 14px; padding: 18px 20px; margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.04); display: flex; flex-wrap: wrap;
+            align-items: flex-start; gap: 16px; transition: border-color 0.2s;
+        }
+        .ua-display-card:hover { border-color: #94a3b8; }
+        .ua-label-row { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+        .ua-icon { width: 38px; height: 38px; border-radius: 10px; background: #f1f5f9; display: flex; align-items: center; justify-content: center; font-size: 1.3rem; }
+        .ua-meta { display: flex; flex-direction: column; gap: 2px; }
+        .ua-meta .ua-title { font-weight: 700; font-size: 0.85rem; color: #475569; text-transform: uppercase; letter-spacing: 0.04em; }
+        .ua-meta .ua-browser-tag { font-size: 0.8rem; color: #64748b; background: #f8fafc; padding: 2px 10px; border-radius: 20px; border: 1px solid #e2e8f0; display: inline-block; width: fit-content; white-space: nowrap; }
+        .ua-full-string {
+            flex: 1; min-width: 260px; font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+            font-size: 0.78rem; color: #334155; background: #f8fafc; padding: 12px 14px;
+            border-radius: 8px; word-break: break-all; border: 1px solid #e8ecf1; line-height: 1.6;
+            position: relative; cursor: pointer; transition: background 0.15s; user-select: all;
+        }
+        .ua-full-string:hover { background: #eef2f6; }
+        .ua-full-string::after {
+            content: '📋 点击复制'; position: absolute; top: 8px; right: 12px;
+            font-size: 0.7rem; color: #94a3b8; font-family: system-ui, sans-serif;
+            pointer-events: none; opacity: 0; transition: opacity 0.2s;
+        }
+        .ua-full-string:hover::after { opacity: 1; }
+        .ua-copied-toast {
+            position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+            background: #0f172a; color: #fff; padding: 10px 22px; border-radius: 30px;
+            font-size: 0.85rem; z-index: 999; pointer-events: none; opacity: 0;
+            transition: opacity 0.3s; box-shadow: 0 10px 25px rgba(0,0,0,0.25);
+        }
+        .ua-copied-toast.show { opacity: 1; }
+
+        .summary {
+            border-radius: 16px; padding: 22px 24px; margin-bottom: 24px;
+            display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center;
+            gap: 14px; box-shadow: 0 8px 20px rgba(0,0,0,0.08); color: #fff; transition: background-color 0.4s;
+        }
+        .summary .verdict { font-size: 1.15rem; font-weight: 700; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+        .summary .verdict .emoji { font-size: 1.6rem; flex-shrink: 0; }
+        .summary .verdict .tag-pill { padding: 5px 14px; border-radius: 30px; background: rgba(255,255,255,0.15); font-size: 0.85rem; font-weight: 600; backdrop-filter: blur(4px); white-space: nowrap; }
+        .summary .detail-row { display: flex; flex-wrap: wrap; gap: 10px; font-size: 0.85rem; opacity: 0.9; align-items: center; }
+        .summary .highlight-real { background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 20px; font-weight: 700; backdrop-filter: blur(4px); white-space: nowrap; }
+
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 18px; }
+        .card { background: var(--surface); border-radius: 12px; border: 1px solid var(--border); box-shadow: 0 2px 6px rgba(0,0,0,0.03); overflow: hidden; transition: box-shadow 0.2s; }
+        .card:hover { box-shadow: 0 6px 18px rgba(0,0,0,0.06); }
+        .card-header { background: #f8fafc; padding: 12px 16px; font-weight: 700; font-size: 0.95rem; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 8px; }
+        .card-body { padding: 0; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.83rem; }
+        tr { border-bottom: 1px solid #f1f5f9; transition: background 0.1s; }
+        tr:last-child { border-bottom: none; }
+        tr:hover { background: #fafbfc; }
+        td { padding: 11px 14px; vertical-align: top; }
+        td:first-child { font-weight: 600; width: 34%; color: #475569; font-size: 0.8rem; }
+        td:last-child { word-break: break-word; }
+
+        .badge { display: inline-block; padding: 3px 9px; border-radius: 6px; font-size: 0.7rem; font-weight: 700; margin-bottom: 4px; text-transform: uppercase; }
+        .badge.pass { background: var(--pass-bg); color: var(--pass-text); border: 1px solid #a7f3d0; }
+        .badge.warn { background: var(--warn-bg); color: var(--warn-text); border: 1px solid #fed7aa; }
+        .badge.fail { background: var(--fail-bg); color: var(--fail-text); border: 1px solid #fecaca; }
+        .badge.info { background: var(--info-bg); color: var(--info-text); border: 1px solid #bae6fd; }
+        .reason { display: block; font-size: 0.76rem; color: #64748b; margin-top: 4px; line-height: 1.45; }
+        @media (max-width: 600px) { .grid { grid-template-columns: 1fr; } .ua-display-card { flex-direction: column; } .summary { flex-direction: column; align-items: flex-start; } }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="page-header">
+            <h1>🔍 浏览器指纹与防伪装分析 · 增强版</h1>
+            <div class="sub">融合底层引擎、Client Hints、WebGL 渲染指纹 — 看穿 UA 与操作系统伪装</div>
+        </div>
+
+        <div class="ua-display-card" id="uaCard">
+            <div class="ua-label-row">
+                <div class="ua-icon">🧬</div>
+                <div class="ua-meta">
+                    <span class="ua-title">当前 User-Agent</span>
+                    <span class="ua-browser-tag" id="uaClaimedTag">解析中...</span>
+                </div>
+            </div>
+            <div class="ua-full-string" id="uaFullString" title="点击复制 UA 字符串">读取中...</div>
+        </div>
+
+        <div class="summary" id="summaryArea">
+            <div class="verdict"><span class="emoji">⏳</span> 环境扫描中...</div>
+        </div>
+
+        <div class="grid" id="detectionGrid"></div>
+    </div>
+    <div class="ua-copied-toast" id="uaToast">✅ UA 已复制到剪贴板</div>
+
+    <script>
+        (function() {
+            let results = [];
+            let interactData = { mouse: false, click: false, scroll: false };
+            let realBrowserEvidence = {
+                hasChromeObject: false, hasGeckoCSS: false, isV8Stack: false,
+                isSpiderMonkeyStack: false, clientHintsBrands: [], clientHintsPlatform: '',
+                hasSoftwareRenderer: false, isWebdriver: false, rendererDetail: '',
+            };
+
+            function addResult(category, name, value, status, reason) {
+                results.push({ category, name, value, status, reason });
+            }
+
+            function isNativeSupport(obj, prop) {
+                try {
+                    if (!obj || !(prop in obj)) return false;
+                    const val = obj[prop];
+                    if (typeof val === 'function') return /\{\s*\[native code\]\s*\}/.test(val.toString());
+                    return true;
+                } catch (e) { return false; }
+            }
+
+            function inferRealBrowser(claimed, ua) {
+                let candidates = [];
+                if (realBrowserEvidence.clientHintsBrands.length > 0) {
+                    const brandsLower = realBrowserEvidence.clientHintsBrands.map(b => b.toLowerCase());
+                    if (brandsLower.some(b => b.includes('microsoft edge') || b.includes('edge'))) candidates.push({ browser: 'Edge', weight: 95, source: 'Client Hints 品牌标识' });
+                    if (brandsLower.some(b => b.includes('google chrome') && !b.includes('chromium'))) candidates.push({ browser: 'Chrome', weight: 90, source: 'Client Hints 品牌标识' });
+                    if (brandsLower.some(b => b.includes('brave'))) candidates.push({ browser: 'Brave', weight: 95, source: 'Client Hints 品牌标识' });
+                    if (brandsLower.some(b => b.includes('opera'))) candidates.push({ browser: 'Opera', weight: 95, source: 'Client Hints 品牌标识' });
+                }
+                if (realBrowserEvidence.isV8Stack && !realBrowserEvidence.isSpiderMonkeyStack) candidates.push({ browser: 'Chromium 系 (V8引擎)', weight: 80, source: 'JS 报错堆栈格式 (V8)' });
+                if (realBrowserEvidence.isSpiderMonkeyStack && !realBrowserEvidence.isV8Stack) candidates.push({ browser: 'Firefox 系 (SpiderMonkey引擎)', weight: 85, source: 'JS 报错堆栈格式 (SpiderMonkey)' });
+                if (realBrowserEvidence.hasChromeObject) candidates.push({ browser: 'Chromium 系', weight: 60, source: 'window.chrome 对象存在' });
+                if (realBrowserEvidence.hasGeckoCSS && !realBrowserEvidence.hasChromeObject) candidates.push({ browser: 'Firefox 系 (Gecko渲染)', weight: 75, source: 'Gecko 私有 CSS 特性' });
+                if (realBrowserEvidence.hasSoftwareRenderer) candidates.push({ browser: 'Headless Chrome (软件渲染)', weight: 70, source: 'WebGL 软件渲染器: ' + realBrowserEvidence.rendererDetail });
+                if (realBrowserEvidence.isWebdriver) candidates.push({ browser: '自动化控制浏览器', weight: 90, source: 'navigator.webdriver = true' });
+
+                if (candidates.length === 0) {
+                    if (claimed === 'safari') return { browser: 'Safari (或 WebKit 系)', confidence: 'low', note: '无明确底层特征，依据 UA 判断' };
+                    if (claimed === 'firefox') return { browser: 'Firefox', confidence: 'low', note: '无明确底层特征，依据 UA 判断' };
+                    if (claimed === 'chrome') return { browser: 'Chrome / Chromium 系', confidence: 'low', note: '无明确底层特征，依据 UA 判断' };
+                    if (claimed === 'edge') return { browser: 'Edge', confidence: 'low', note: '无明确底层特征，依据 UA 判断' };
+                    return { browser: '未知浏览器', confidence: 'low', note: '无法从底层特征确定真实浏览器' };
+                }
+                candidates.sort((a, b) => b.weight - a.weight);
+                const top = candidates[0];
+                const highWeightCandidates = candidates.filter(c => c.weight >= 75);
+                if (highWeightCandidates.length >= 2) {
+                    const browsers = [...new Set(highWeightCandidates.map(c => c.browser))];
+                    if (browsers.length >= 2) {
+                        return { browser: top.browser, confidence: 'medium', note: '多个底层特征指向不同方向，取最可信证据: ' + top.source };
+                    }
+                }
+                return { browser: top.browser, confidence: top.weight >= 85 ? 'high' : 'medium', note: '依据: ' + top.source };
+            }
+
+            function runCoreDetection() {
+                results = [];
+                realBrowserEvidence = { hasChromeObject: false, hasGeckoCSS: false, isV8Stack: false, isSpiderMonkeyStack: false, clientHintsBrands: [], clientHintsPlatform: '', hasSoftwareRenderer: false, isWebdriver: false, rendererDetail: '' };
+
+                const ua = navigator.userAgent;
+                const uaLower = ua.toLowerCase();
+
+                // --- 声明身份解析 ---
+                let claimed = 'unknown';
+                if (uaLower.includes('edg/')) claimed = 'edge';
+                else if (uaLower.includes('chrome/') || uaLower.includes('crios/')) claimed = 'chrome';
+                else if (uaLower.includes('firefox/') || uaLower.includes('fxios/')) claimed = 'firefox';
+                else if (uaLower.includes('safari/') && !uaLower.includes('chrome/')) claimed = 'safari';
+
+                // --- ★ 提前解析操作系统（供后续 WebGL 检测使用）★ ---
+                let uaOS = 'unknown';
+                if (/windows nt/i.test(uaLower)) uaOS = 'windows';
+                else if (/mac os x|macintosh/i.test(uaLower)) uaOS = 'macos';
+                else if (/android/i.test(uaLower)) uaOS = 'android';
+                else if (/iphone|ipad|ipod/i.test(uaLower)) uaOS = 'ios';
+                else if (/cros/i.test(uaLower)) uaOS = 'chromeos';
+                else if (/linux/i.test(uaLower)) uaOS = 'linux';
+
+                // ==========================================
+                // 1. 深度引擎特征
+                // ==========================================
+                const isChromium = !!window.chrome;
+                const isGecko = typeof CSS !== 'undefined' && CSS.supports && CSS.supports('-moz-appearance', 'none');
+                realBrowserEvidence.hasChromeObject = isChromium;
+                realBrowserEvidence.hasGeckoCSS = isGecko;
+
+                if (claimed === 'chrome' || claimed === 'edge') {
+                    addResult('深度引擎特征', 'window.chrome 验证', isChromium ? '存在 ✅' : '缺失 ❌', isChromium ? 'pass' : 'fail', isChromium ? '符合 Chromium 特征' : 'UA 声明为 Chromium 但缺失核心对象！');
+                    if (isGecko) addResult('深度引擎特征', '渲染特征冲突', '检测到 Gecko ⚠️', 'fail', 'UA 声明为 Chromium 但底层渲染器为 Firefox！');
+                } else if (claimed === 'firefox') {
+                    addResult('深度引擎特征', 'Gecko 渲染验证', isGecko ? '匹配 ✅' : '缺失 ❌', isGecko ? 'pass' : 'fail', isGecko ? '符合 Firefox 特征' : '缺失 Firefox 私有 CSS 特性！');
+                    if (isChromium) addResult('深度引擎特征', '渲染特征冲突', '检测到 Chromium ⚠️', 'fail', 'UA 声明为 Firefox 但底层暴露了 window.chrome！');
+                }
+
+                try { throw new Error('test'); } catch (e) {
+                    const stack = e.stack || '';
+                    const isV8 = stack.includes('Error: test\n    at');
+                    const isSpider = stack.includes('@') && !stack.includes('    at ');
+                    realBrowserEvidence.isV8Stack = isV8;
+                    realBrowserEvidence.isSpiderMonkeyStack = isSpider;
+                    if (claimed === 'chrome' || claimed === 'edge') {
+                        addResult('深度引擎特征', 'JS 引擎堆栈 (V8)', isV8 ? '匹配 ✅' : '不匹配 ❌', isV8 ? 'pass' : 'fail', isV8 ? '底层使用 V8 引擎' : '报错格式不是 V8 引擎，UA 被篡改！');
+                    } else if (claimed === 'firefox') {
+                        addResult('深度引擎特征', 'JS 引擎堆栈 (SpiderMonkey)', isSpider ? '匹配 ✅' : '不匹配 ❌', isSpider ? 'pass' : 'fail', isSpider ? '底层使用 SpiderMonkey' : '报错格式不是 Firefox 引擎，UA 被篡改！');
+                    }
+                }
+
+                // ==========================================
+                // 2. Client Hints API
+                // ==========================================
+                if (navigator.userAgentData && navigator.userAgentData.brands) {
+                    const brands = navigator.userAgentData.brands;
+                    realBrowserEvidence.clientHintsBrands = brands.map(b => b.brand);
+                    if (navigator.userAgentData.platform) realBrowserEvidence.clientHintsPlatform = navigator.userAgentData.platform;
+                    const brandsLower = brands.map(b => b.brand.toLowerCase());
+                    const hasEdge = brandsLower.some(b => b.includes('edge'));
+                    const hasChrome = brandsLower.some(b => b.includes('google chrome'));
+                    if (claimed === 'edge') {
+                        addResult('Client Hints API', '品牌一致性 (Edge)', hasEdge ? '一致 ✅' : '缺失 ⚠️', hasEdge ? 'pass' : 'fail', hasEdge ? '底层品牌承认是 Edge' : '声明为 Edge 但底层 API 未暴露 Edge 品牌');
+                    } else if (claimed === 'chrome') {
+                        addResult('Client Hints API', '品牌一致性 (Chrome)', !hasEdge ? '一致 ✅' : '冲突 ⚠️', !hasEdge ? 'pass' : 'fail', !hasEdge ? '纯正 Chrome' : '声明为纯 Chrome，但底层 API 暴露出 Edge 品牌');
+                    }
+                    addResult('Client Hints API', 'API 状态', '原生支持 ✅', 'pass', '正常返回 userAgentData');
+                } else {
+                    const match = uaLower.match(/(chrome|edge|edg)\/(\d+)/);
+                    if (match && parseInt(match[2]) > 100 && window.isSecureContext) {
+                        addResult('Client Hints API', 'API 状态', '异常缺失 ❌', 'fail', '新版 Chromium 在 HTTPS 下理应支持此 API，可能被屏蔽。');
+                    } else {
+                        addResult('Client Hints API', 'API 状态', '未启用/不支持', 'info', 'Firefox / Safari 或 HTTP 协议下不支持是正常的。');
+                    }
+                }
+
+                // ==========================================
+                // 3. 自动化与无头浏览器检测
+                // ==========================================
+                const isWebdriver = !!navigator.webdriver;
+                realBrowserEvidence.isWebdriver = isWebdriver;
+                addResult('自动化特征', 'navigator.webdriver', isWebdriver ? '已开启 ⚠️' : '未开启 ✅', isWebdriver ? 'fail' : 'pass', isWebdriver ? '被自动化框架控制！' : '未开启原生自动化标志');
+
+                const automationIndicators = [
+                    { key: '$cdc_asdjflasutopfhvcZLmcfl_', label: 'Selenium CDC' },
+                    { key: '__webdriver_evaluate', label: 'WebDriver Evaluate' },
+                    { key: 'domAutomation', label: 'domAutomation' },
+                    { key: 'Buffer', label: 'Node.js Buffer' },
+                ];
+                let detectedAutomation = [];
+                automationIndicators.forEach(ind => { if (window[ind.key] || document[ind.key]) detectedAutomation.push(ind); });
+                if (detectedAutomation.length > 0) {
+                    addResult('自动化特征', '框架注入变量', detectedAutomation.map(d=>d.label).join('、'), 'fail', '检测到自动化框架注入的特征变量');
+                }
+
+                // ★★★ WebGL 检测（包含软件渲染 + 操作系统渲染指纹）★★★
+                try {
+                    const gl = document.createElement('canvas').getContext('webgl');
+                    if (gl) {
+                        const ext = gl.getExtension('WEBGL_debug_renderer_info');
+                        const renderer = ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : '';
+                        realBrowserEvidence.rendererDetail = renderer;
+                        const isSoftware = /swiftshader|llvmpipe|mesa\b|virtualbox|basic render|google swiftshader|angle\s*\(?software|chromium\s*canvas/i.test(renderer);
+                        realBrowserEvidence.hasSoftwareRenderer = isSoftware;
+                        addResult('自动化特征', 'WebGL 渲染器', renderer || '获取失败', isSoftware ? 'warn' : 'pass', isSoftware ? '使用软件渲染，极大概率是无头浏览器' : '硬件加速正常 (' + renderer + ')');
+
+                        // ----- 操作系统渲染指纹交叉验证 (Windows 伪装 Linux 核心检测) -----
+                        if (renderer) {
+                            const isWindowsRenderer = /direct3d|directx|d3d|angel.*d3d|nvidia.*d3d|amd.*d3d|intel.*d3d/i.test(renderer);
+                            const isLinuxRenderer = /mesa|llvmpipe|nouveau|open source|intel.*mesa|amd.*mesa/i.test(renderer);
+                            if (uaOS === 'linux' && isWindowsRenderer) {
+                                addResult('操作系统一致性', 'WebGL 渲染指纹', 'Linux UA 但渲染器含 Windows 特征', 'fail', `渲染器 "${renderer}" 明确指向 Windows (Direct3D)，但 UA 声称 Linux — 明显伪装`);
+                            } else if (uaOS === 'windows' && isLinuxRenderer) {
+                                addResult('操作系统一致性', 'WebGL 渲染指纹', 'Windows UA 但渲染器含 Linux 特征', 'warn', `渲染器 "${renderer}" 指向 Linux (Mesa/OpenGL)，与 UA 不符`);
+                            }
+                        }
+                    }
+                } catch (e) {}
+
+                // ==========================================
+                // 4. 无头浏览器专项检测
+                // ==========================================
+                if (window.outerWidth === 0 && window.outerHeight === 0) {
+                    addResult('无头浏览器特征', '窗口外框尺寸', '0×0', 'fail', '窗口外框尺寸为 0，高度疑似无头浏览器！');
+                } else {
+                    addResult('无头浏览器特征', '窗口外框尺寸', outerWidth+'×'+outerHeight, 'pass', '窗口外框尺寸正常');
+                }
+
+                // ==========================================
+                // 5. 操作系统一致性
+                // ==========================================
+                const osLabels = { windows:'Windows', macos:'macOS', linux:'Linux', android:'Android', ios:'iOS', chromeos:'ChromeOS', unknown:'未知' };
+                let platformOS = 'unknown';
+                const pl = (navigator.platform || '').toLowerCase();
+                if (pl.startsWith('win')) platformOS = 'windows';
+                else if (pl.startsWith('mac')) platformOS = 'macos';
+                else if (pl.startsWith('linux')) platformOS = 'linux';
+
+                const osMismatch = (uaOS === 'windows' && platformOS !== 'windows') || (uaOS === 'macos' && platformOS !== 'macos') || (uaOS === 'linux' && platformOS !== 'linux');
+                addResult('操作系统一致性', 'UA 与平台交叉验证', `UA: ${osLabels[uaOS]} / Platform: ${osLabels[platformOS]}`, osMismatch ? 'fail' : 'pass', osMismatch ? 'UA 与 navigator.platform 不一致！' : 'UA 与平台信息一致');
+
+                if (navigator.userAgentData && navigator.userAgentData.platform) {
+                    const uadPlatform = navigator.userAgentData.platform.toLowerCase();
+                    const uadMismatch = (uaOS === 'windows' && uadPlatform !== 'windows') || (uaOS === 'linux' && uadPlatform !== 'linux');
+                    addResult('操作系统一致性', 'Client Hints 平台验证', `CH: ${navigator.userAgentData.platform} / UA: ${osLabels[uaOS]}`, uadMismatch ? 'fail' : 'pass', uadMismatch ? 'Client Hints 平台与 UA 不一致！' : 'Client Hints 平台与 UA 一致');
+                }
+
+                // 字体探测（辅助）
+                if (uaOS === 'linux') {
+                    const hasWindowsFont = document.fonts.check('12px "Calibri"') || document.fonts.check('12px "Segoe UI"');
+                    if (hasWindowsFont) addResult('操作系统一致性', '字体探测', '声称 Linux 但检测到 Windows 专属字体', 'warn', '系统中存在 Calibri 或 Segoe UI，可能为 Windows 伪装');
+                }
+
+                addResult('系统硬件信息', '逻辑核心 / 内存', `${navigator.hardwareConcurrency || '?'} 核 / ${navigator.deviceMemory || '?'} GB`, 'info', '反映设备真实物理性能');
+
+                return { claimed, ua, uaLower, realBrowserInference: inferRealBrowser(claimed, ua) };
+            }
+
+            function initInteractionTracking() {
+                const updateInteraction = () => {
+                    let score = (interactData.mouse?1:0)+(interactData.click?1:0)+(interactData.scroll?1:0);
+                    let status = score >= 1 ? 'pass' : 'warn';
+                    let text = `鼠标:${interactData.mouse?'✅':'⏳'} 点击:${interactData.click?'✅':'⏳'} 滚动:${interactData.scroll?'✅':'⏳'}`;
+                    let existing = results.find(r => r.name === '人机交互轨迹');
+                    if (existing) { existing.value = text; existing.status = status; existing.reason = score >= 1 ? '捕捉到真实物理交互' : '页面静止，等待交互...'; }
+                    else addResult('行为分析', '人机交互轨迹', text, status, '页面静止，等待交互...');
+                    renderUI();
+                };
+                window.addEventListener('mousemove', () => { interactData.mouse = true; updateInteraction(); }, {once: true});
+                window.addEventListener('click', () => { interactData.click = true; updateInteraction(); }, {once: true});
+                window.addEventListener('scroll', () => { interactData.scroll = true; updateInteraction(); }, {once: true});
+                updateInteraction();
+            }
+
+            let detectionMeta = null;
+            function renderUI() {
+                const grid = document.getElementById('detectionGrid');
+                grid.innerHTML = '';
+                const categories = {};
+                results.forEach(r => { if (!categories[r.category]) categories[r.category] = []; categories[r.category].push(r); });
+                const fails = results.filter(r => r.status === 'fail').length;
+                const warns = results.filter(r => r.status === 'warn').length;
+
+                if (detectionMeta) {
+                    document.getElementById('uaClaimedTag').textContent = `🏷️ UA 声明: ${detectionMeta.claimed.charAt(0).toUpperCase()+detectionMeta.claimed.slice(1)}`;
+                    document.getElementById('uaFullString').textContent = detectionMeta.ua;
+                }
+
+                const summary = document.getElementById('summaryArea');
+                if (detectionMeta && detectionMeta.realBrowserInference) {
+                    const inference = detectionMeta.realBrowserInference;
+                    const realBrowser = inference.browser;
+                    const isDisguised = (detectionMeta.claimed === 'chrome' && realBrowser.includes('Edge')) || (detectionMeta.claimed === 'linux' && realBrowser.includes('Windows'));
+                    if (fails > 0 || isDisguised) {
+                        summary.style.backgroundColor = '#7f1d1d';
+                        summary.innerHTML = `<div class="verdict"><span class="emoji">🚫</span> 风险极高：检测到浏览器身份或操作系统伪装</div><div class="detail-row"><span>发现 <b>${fails}</b> 项致命异常</span>${warns>0?`<span class="sep">|</span><span><b>${warns}</b> 项警告</span>`:''}<span class="sep">|</span><span>🔍 真实浏览器：<span class="highlight-real">${realBrowser}</span></span></div>`;
+                    } else if (warns > 0) {
+                        summary.style.backgroundColor = '#b8860b';
+                        summary.innerHTML = `<div class="verdict"><span class="emoji">⚠️</span> 环境可疑：存在可疑特征</div><div class="detail-row"><span>发现 <b>${warns}</b> 项警告</span><span class="sep">|</span><span>真实浏览器：<span class="highlight-real">${realBrowser}</span></span></div>`;
+                    } else {
+                        summary.style.backgroundColor = '#065f46';
+                        summary.innerHTML = `<div class="verdict"><span class="emoji">✅</span> 环境安全：未发现任何篡改痕迹</div><div class="detail-row"><span>真实浏览器：<span class="highlight-real">${realBrowser}</span></span></div>`;
+                    }
+                }
+
+                for (let [cat, items] of Object.entries(categories)) {
+                    const card = document.createElement('div');
+                    card.className = 'card';
+                    card.innerHTML = `<div class="card-header">${cat}</div><div class="card-body"><table>${items.map(item => `<tr><td>${item.name}</td><td><span class="badge ${item.status}">${item.status.toUpperCase()}</span><br><strong>${item.value}</strong>${item.reason ? `<span class="reason">${item.reason}</span>` : ''}</td></tr>`).join('')}</table></div>`;
+                    grid.appendChild(card);
+                }
+            }
+
+            function setupUACopy() {
+                const uaEl = document.getElementById('uaFullString');
+                const toast = document.getElementById('uaToast');
+                uaEl.addEventListener('click', () => {
+                    const text = uaEl.textContent;
+                    if (!text || text === '读取中...') return;
+                    navigator.clipboard.writeText(text).then(() => { toast.classList.add('show'); setTimeout(() => toast.classList.remove('show'), 1800); }).catch(() => {});
+                });
+            }
+
+            detectionMeta = runCoreDetection();
+            initInteractionTracking();
+            setupUACopy();
+            renderUI();
+        })();
+    </script>
+</body>
+</html>
