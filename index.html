@@ -17,7 +17,6 @@
             --info-text: #075985;
             --surface: #ffffff;
             --border: #e2e8f0;
-            --muted: #64748b;
             --accent: #3b82f6;
         }
         * { box-sizing: border-box; }
@@ -108,7 +107,7 @@
     <div class="container">
         <div class="page-header">
             <h1>浏览器指纹与防伪装分析</h1>
-            <div class="sub">融合底层引擎、Client Hints、WebGL 渲染指纹 — 识别大部分 UA 与操作系统伪装</div>
+            <div class="sub">融合底层引擎、Client Hints、WebGL 渲染指纹 — 识别 UA 与操作系统伪装</div>
         </div>
 
         <div class="ua-display-card" id="uaCard">
@@ -195,7 +194,7 @@
                 const ua = navigator.userAgent;
                 const uaLower = ua.toLowerCase();
 
-                // 声明身份解析 (修复 Edge 移动版 EdgA 识别)
+                // 声明身份解析 (已修复 EdgA)
                 let claimed = 'unknown';
                 if (uaLower.includes('edg/') || uaLower.includes('edga/')) claimed = 'edge';
                 else if (uaLower.includes('chrome/') || uaLower.includes('crios/')) claimed = 'chrome';
@@ -435,7 +434,7 @@
                 }
 
                 // ==========================================
-                // 6. 浏览器版本探测 (支持 EdgA 版本提取)
+                // 6. 浏览器版本探测 (支持 EdgA)
                 // ==========================================
                 if (claimed === 'chrome' || claimed === 'edge' || claimed === 'firefox') {
                     let match;
@@ -478,9 +477,22 @@
                     }
                 }
 
+                // ==========================================
+                // 系统硬件信息 + 内存API一致性判断 (Firefox 特殊性)
+                // ==========================================
+                const memory = navigator.deviceMemory;
                 addResult('系统硬件信息', '逻辑核心 / 内存',
-                    (navigator.hardwareConcurrency || '?')+' 核 / '+(navigator.deviceMemory || '?')+' GB',
+                    (navigator.hardwareConcurrency || '?')+' 核 / '+(memory || '?')+' GB',
                     'info', '反映设备真实物理性能');
+
+                // 内存API暴露判断：Firefox 默认隐藏 deviceMemory
+                if (claimed === 'firefox' && memory !== undefined) {
+                    addResult('环境一致性', '内存API暴露', 'Firefox 不应暴露 deviceMemory', 'fail',
+                        '标准 Firefox 隐藏此API，当前UA声称为Firefox却暴露内存信息，极可能是Chromium伪装');
+                } else if ((claimed === 'chrome' || claimed === 'edge') && !isMobile && memory === undefined) {
+                    addResult('环境一致性', '内存API缺失', '桌面 Chromium 缺失 deviceMemory', 'warn',
+                        '桌面端Chrome/Edge通常支持此API，缺失可能是Firefox伪装或特殊隐私配置');
+                }
 
                 return { claimed, ua, uaLower, isMobile, realBrowserInference: inferRealBrowser(claimed, ua) };
             }
