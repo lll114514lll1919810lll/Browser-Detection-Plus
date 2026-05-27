@@ -616,11 +616,18 @@
 
                 const claimKey = claimed;
                 const inferredBrowserLower = inference.browser.toLowerCase();
+
+                const hasChromiumEvidence = realBrowserEvidence.hasChromeObject || realBrowserEvidence.isV8Stack ||
+                    realBrowserEvidence.clientHintsBrands.some(b => /chrome|chromium|edge/i.test(b));
+                const hasFirefoxEvidence = realBrowserEvidence.isSpiderMonkeyStack || realBrowserEvidence.hasGeckoCSS ||
+                    realBrowserEvidence.clientHintsBrands.some(b => /firefox|gecko/i.test(b));
+                const hasSafariEvidence = inferredBrowserLower.includes('safari') || inferredBrowserLower.includes('webkit');
+
                 const isMismatch =
-                    (claimKey === 'chrome' && !inferredBrowserLower.includes('chrome') && !inferredBrowserLower.includes('chromium')) ||
-                    (claimKey === 'edge' && !inferredBrowserLower.includes('edge')) ||
-                    (claimKey === 'firefox' && !inferredBrowserLower.includes('firefox') && !inferredBrowserLower.includes('gecko')) ||
-                    (claimKey === 'safari' && !inferredBrowserLower.includes('safari') && !inferredBrowserLower.includes('webkit'));
+                    (claimKey === 'chrome' && (hasFirefoxEvidence || (hasSafariEvidence && !hasChromiumEvidence))) ||
+                    (claimKey === 'edge' && (hasFirefoxEvidence || (hasSafariEvidence && !hasChromiumEvidence))) ||
+                    (claimKey === 'firefox' && (hasChromiumEvidence || hasSafariEvidence)) ||
+                    (claimKey === 'safari' && (hasChromiumEvidence || hasFirefoxEvidence));
 
                 inferenceData = { claimed, inference, evidenceLines, isMismatch };
 
