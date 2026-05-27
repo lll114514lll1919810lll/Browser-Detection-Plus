@@ -238,6 +238,7 @@
 
             let results = [];
             let interactData = { mouse: false, click: false, scroll: false };
+            let inferenceData = null;
             let realBrowserEvidence = {
                 hasChromeObject: false, hasGeckoCSS: false, isV8Stack: false,
                 isSpiderMonkeyStack: false, clientHintsBrands: [], clientHintsPlatform: '',
@@ -599,7 +600,31 @@
                         '桌面端Chrome/Edge通常支持此API，缺失可能是Firefox伪装或特殊隐私配置');
                 }
 
-                return { claimed, ua, uaLower, isMobile, realBrowserInference: inferRealBrowser(claimed, ua) };
+                const inference = inferRealBrowser(claimed, ua);
+                const claimNames = { chrome: 'Chrome', edge: 'Edge', firefox: 'Firefox', safari: 'Safari', unknown: '未知' };
+                const confidenceLabels = { high: '高 ✅', medium: '中 ⚠️', low: '低 ⚠️' };
+
+                let evidenceLines = [];
+                if (realBrowserEvidence.clientHintsBrands.length > 0) evidenceLines.push('• Client Hints 品牌: ' + realBrowserEvidence.clientHintsBrands.join(', '));
+                if (realBrowserEvidence.clientHintsPlatform) evidenceLines.push('• CH 平台: ' + realBrowserEvidence.clientHintsPlatform);
+                if (realBrowserEvidence.isV8Stack) evidenceLines.push('• JS 引擎: V8');
+                if (realBrowserEvidence.isSpiderMonkeyStack) evidenceLines.push('• JS 引擎: SpiderMonkey');
+                if (realBrowserEvidence.hasChromeObject) evidenceLines.push('• window.chrome 对象: 存在');
+                if (realBrowserEvidence.hasGeckoCSS) evidenceLines.push('• Gecko CSS 特性: 存在');
+                if (realBrowserEvidence.hasSoftwareRenderer) evidenceLines.push('• WebGL 渲染: 软件渲染 (' + realBrowserEvidence.rendererDetail + ')');
+                if (realBrowserEvidence.isWebdriver) evidenceLines.push('• navigator.webdriver: true');
+
+                const claimKey = claimed;
+                const inferredBrowserLower = inference.browser.toLowerCase();
+                const isMismatch =
+                    (claimKey === 'chrome' && !inferredBrowserLower.includes('chrome') && !inferredBrowserLower.includes('chromium')) ||
+                    (claimKey === 'edge' && !inferredBrowserLower.includes('edge')) ||
+                    (claimKey === 'firefox' && !inferredBrowserLower.includes('firefox') && !inferredBrowserLower.includes('gecko')) ||
+                    (claimKey === 'safari' && !inferredBrowserLower.includes('safari') && !inferredBrowserLower.includes('webkit'));
+
+                inferenceData = { claimed, inference, evidenceLines, isMismatch };
+
+                return { claimed, ua, uaLower, isMobile, realBrowserInference: inference };
             }
 
             function initInteractionTracking() {
@@ -624,8 +649,8 @@
                 grid.innerHTML = '';
                 const categories = {};
                 results.forEach(r => { if (!categories[r.category]) categories[r.category] = []; categories[r.category].push(r); });
-                const fails = results.filter(r => r.status === 'fail').length;
-                const warns = results.filter(r => r.status === 'warn').length;
+                const fails = results.filter(r => r.status === 'fail' && r.category !== '浏览器身份推断').length;
+                const warns = results.filter(r => r.status === 'warn' && r.category !== '浏览器身份推断').length;
 
                 if (detectionMeta) {
                     const claimName = detectionMeta.claimed.charAt(0).toUpperCase()+detectionMeta.claimed.slice(1);
@@ -657,7 +682,7 @@
                 for (let [cat, items] of Object.entries(categories)) {
                     const card = document.createElement('div');
                     card.className = 'card';
-                    card.innerHTML = `<div class="card-header">${cat}</div><div class="card-body"><table>${items.map(item => `<tr><td>${item.name}</td><td><span class="badge ${item.status}">${item.status.toUpperCase()}</span><br><strong>${item.value}</strong>${item.reason ? `<span class="reason">${item.reason}</span>` : ''}</td></tr>`).join('')}</table></div>`;
+                    card.innerHTML = `<div class="card-header">${cat}</div><div class="card-body"><table>${items.map(item => `<tr><td>${item.name}</td><td><span class="badge ${item.status}">${item.status.toUpperCase()}</span><br><strong>${item.value.replace(/\n/g, '<br>')}</strong>${item.reason ? `<span class="reason">${item.reason}</span>` : ''}</td></tr>`).join('')}</table></div>`;
                     grid.appendChild(card);
                 }
             }
@@ -677,6 +702,16 @@
 
             detectionMeta = runCoreDetection();
             initInteractionTracking();
+
+            if (inferenceData) {
+                const { claimed, inference, evidenceLines, isMismatch } = inferenceData;
+                const claimNames = { chrome: 'Chrome', edge: 'Edge', firefox: 'Firefox', safari: 'Safari', unknown: '未知' };
+                const confidenceLabels = { high: '高 ✅', medium: '中 ⚠️', low: '低 ⚠️' };
+                addResult('浏览器身份推断', 'UA 声明身份', claimNames[claimed] || claimed, 'info', 'User-Agent 字符串中声明的浏览器身份');
+                addResult('浏览器身份推断', '真实浏览器', inference.browser + '（可信度: ' + confidenceLabels[inference.confidence] + '）', isMismatch ? 'warn' : 'info', isMismatch ? inference.note : '与 UA 声明一致');
+                addResult('浏览器身份推断', '底层证据来源', evidenceLines.join('\n') || '无明确底层特征', 'info', '以上证据用于推断真实浏览器');
+            }
+
             setupUACopy();
             renderUI();
         })();
